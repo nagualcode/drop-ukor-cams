@@ -6,9 +6,11 @@
         <Label id="title" text="DropCams" translation="[60,30]" width="800" height="50" color="0x4DA3FFFF" />
         <LabelList id="list" translation="[60,100]" itemSize="[600,48]" numRows="11"
                    color="0xFFFFFFFF" focusedColor="0xFFFFFFFF" />
-        <Poster id="snap" visible="false" translation="[0,0]" width="1280" height="720" loadDisplayMode="scaleToFit" />
+        <Poster id="snapA" translation="[0,0]" width="1280" height="720" loadDisplayMode="scaleToFit" opacity="1.0" />
+        <Poster id="snapB" translation="[0,0]" width="1280" height="720" loadDisplayMode="scaleToFit" opacity="0.0" />
         <Video id="video" visible="false" translation="[0,0]" width="1280" height="720" />
-        <Label id="status" text="" translation="[60,660]" width="1160" height="40" color="0xFFD24DFF" />
+        <Rectangle id="statusBg" translation="[0,650]" width="1280" height="70" color="0x000000B0" visible="false" />
+        <Label id="status" text="" translation="[40,665]" width="1200" height="40" color="0xFFD24DFF" />
         <Timer id="refreshTimer" repeat="true" duration="1" />
     </children>
 </component>
