@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="MainScene" extends="Scene">
+    <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
+    <children>
+        <Rectangle id="bg" width="1280" height="720" color="0x000000FF" />
+        <Label id="title" text="DropCams" translation="[60,30]" width="800" height="50" color="0x4DA3FFFF" />
+        <LabelList id="list" translation="[60,100]" itemSize="[600,48]" numRows="11"
+                   color="0xFFFFFFFF" focusedColor="0xFFFFFFFF" />
+        <Poster id="snap" visible="false" translation="[0,0]" width="1280" height="720" loadDisplayMode="scaleToFit" />
+        <Video id="video" visible="false" translation="[0,0]" width="1280" height="720" />
+        <Label id="status" text="" translation="[60,660]" width="1160" height="40" color="0xFFD24DFF" />
+        <Timer id="refreshTimer" repeat="true" duration="1" />
+    </children>
+</component>

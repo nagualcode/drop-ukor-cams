@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="FetchTask" extends="Task">
+    <interface>
+        <field id="url" type="string" />
+        <field id="result" type="assocarray" />
+        <field id="error" type="string" />
+    </interface>
+    <script type="text/brightscript" uri="pkg:/components/FetchTask.brs" />
+</component>
