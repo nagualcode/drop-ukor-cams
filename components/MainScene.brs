@@ -3,7 +3,7 @@ function CamsUrl() as string
 end function
 
 function DebugOn() as boolean
-    return true
+    return false
 end function
 
 sub dlog(msg as string)
@@ -21,7 +21,13 @@ sub init()
     m.status = m.top.findNode("status")
     m.statusBg = m.top.findNode("statusBg")
     m.timer = m.top.findNode("refreshTimer")
+    m.watchdog = m.top.findNode("watchdog")
     m.loadClock = CreateObject("roTimespan")
+    m.playClock = CreateObject("roTimespan")
+    m.bufLogs = 0
+    m.hlsFix = ""
+    m.firstVariant = true
+    m.vseq = 0
     m.cams = []
     m.playing = false
     m.loading = false
@@ -39,6 +45,8 @@ sub init()
     m.snapA.observeField("loadStatus", "onSnapStatus")
     m.snapB.observeField("loadStatus", "onSnapStatus")
     m.timer.observeField("fire", "onTimer")
+    m.watchdog.observeField("fire", "onWatchdog")
+    m.video.observeField("bufferingStatus", "onBuffering")
 
     dlog("app iniciado. cams.json = " + CamsUrl())
     loadCams()
@@ -77,6 +85,9 @@ sub onCamsLoaded()
         return
     end if
     m.cams = cams
+    fix = m.task.result.lookup("hls_fix")
+    if fix <> invalid then m.hlsFix = fix
+    dlog("hls_fix=" + m.hlsFix)
     dlog("cams.json ok: " + cams.Count().ToStr() + " cameras")
     content = CreateObject("roSGNode", "ContentNode")
     for each cam in cams
@@ -123,10 +134,17 @@ sub startCam(cam as object)
         m.curLive = live
         if DebugOn() then
             m.probe = CreateObject("roSGNode", "PlaylistProbe")
-            m.probe.url = cam.lookup("url")
+            m.probe.url = hlsUrl(cam)
             m.probe.control = "RUN"
         end if
-        playHls(cam, m.curLive)
+        d = cam.lookup("direct")
+        if d <> invalid and d = false then
+            m.firstVariant = false
+            playHls(cam, m.curLive, hlsUrl(cam))
+        else
+            m.firstVariant = true
+            fetchVariant()
+        end if
     else
         ms = cam.lookup("refresh")
         if ms = invalid then ms = 1000
@@ -147,9 +165,10 @@ sub startCam(cam as object)
 end sub
 
 ' ---------- HLS ----------
-sub playHls(cam as object, live as boolean)
+sub playHls(cam as object, live as boolean, url as string)
     c = CreateObject("roSGNode", "ContentNode")
-    c.url = cam.lookup("url")
+    c.url = url
+    dlog("url=" + c.url)
     c.title = cam.lookup("name")
     c.streamFormat = "hls"
     c.live = live
@@ -163,6 +182,9 @@ sub playHls(cam as object, live as boolean)
     m.video.visible = true
     m.video.setFocus(true)
     m.video.control = "play"
+    m.playClock.Mark()
+    m.watchdog.control = "stop"
+    m.watchdog.control = "start"
 end sub
 
 function iif(c as boolean, a as string, b as string) as string
@@ -174,16 +196,17 @@ sub onVideoState()
     s = m.video.state
     dlog("video state=" + s)
     if s = "playing" then
+        m.watchdog.control = "stop"
+        dlog("PLAYING apos " + m.playClock.TotalMilliseconds().ToStr() + " ms")
         setStatus("")
     else if s = "buffering" then
         setStatus("Carregando...")
     else if s = "error" then
         dlog("ERRO code=" + m.video.errorCode.ToStr() + " msg=" + m.video.errorMsg + " str=" + m.video.errorStr)
         dlog("ERRO info=" + FormatJson(m.video.errorInfo))
-        if m.attempt = 1 and m.curCam <> invalid then
-            m.attempt = 2
-            m.curLive = not m.curLive
-            playHls(m.curCam, m.curLive)
+        m.watchdog.control = "stop"
+        if m.attempt = 1 and m.curCam <> invalid and Instr(1, m.video.errorStr, "(404)") = 0 then
+            retryOther()
         else
             setStatus("Erro HLS " + m.video.errorCode.ToStr() + ": " + m.video.errorMsg + "  (Voltar para sair)")
         end if
@@ -241,6 +264,7 @@ end sub
 sub stopPlayback()
     dlog("parando reproducao")
     m.playing = false
+    m.watchdog.control = "stop"
     m.timer.control = "stop"
     m.video.control = "stop"
     m.video.visible = false
@@ -268,3 +292,73 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     return false
 end function
+
+sub onWatchdog()
+    if not m.playing or m.video.state = "playing" then return
+    dlog("WATCHDOG: estado=" + m.video.state + " apos 10s, segmentos baixados=" + m.segCount.ToStr() + ", tentativa=" + m.attempt.ToStr())
+    if m.attempt = 1 and m.curCam <> invalid then
+        retryOther()
+    else
+        setStatus("Sem video apos 10s (segmentos=" + m.segCount.ToStr() + "). Veja o log.  Voltar para sair")
+    end if
+end sub
+
+sub onBuffering()
+    m.bufLogs = m.bufLogs + 1
+    if m.bufLogs <= 6 then dlog("bufferingStatus=" + FormatJson(m.video.bufferingStatus))
+end sub
+
+' Passa pelo Worker (/hls) quando cams.json tem "hls_fix" e a camera nao tem "proxy": false
+function hlsUrl(cam as object) as string
+    url = cam.lookup("url")
+    useProxy = true
+    v = cam.lookup("proxy")
+    if v <> invalid then useProxy = v
+    if m.hlsFix <> "" and useProxy then url = m.hlsFix + "&u=" + url.EncodeUriComponent()
+    return url
+end function
+
+' Variante direta (media playlist), sem passar pela master
+sub fetchVariant()
+    m.segCount = 0
+    m.watchdog.control = "stop"
+    dlog("buscando a variante direta (media playlist)")
+    setStatus("Carregando " + m.curCam.lookup("name") + "...")
+    m.vseq = m.vseq + 1
+    m.vtask = CreateObject("roSGNode", "VariantTask")
+    m.vtask.id = "v" + m.vseq.ToStr()
+    m.vtask.url = m.curCam.lookup("url")
+    m.vtask.observeField("result", "onVariantReady")
+    m.vtask.control = "RUN"
+end sub
+
+sub onVariantReady(event as object)
+    node = event.getRoSGNode()
+    if node.id <> m.vtask.id then return
+    if not m.playing then return
+    v = node.result
+    if Left(v, 6) = "ERROR:" then
+        dlog("variante direta falhou: " + v)
+        if m.attempt = 1 then
+            retryOther()
+        else
+            setStatus("Falha: " + v + "  (Voltar para sair)")
+        end if
+        return
+    end if
+    playHls(m.curCam, true, v)
+end sub
+
+' 2a tentativa: o outro caminho (master <-> variante direta)
+sub retryOther()
+    m.attempt = 2
+    m.segCount = 0
+    m.watchdog.control = "stop"
+    if m.firstVariant then
+        dlog("FALLBACK: variante direta falhou, tentando a master")
+        playHls(m.curCam, true, hlsUrl(m.curCam))
+    else
+        dlog("FALLBACK: master falhou, tentando a variante direta")
+        fetchVariant()
+    end if
+end sub

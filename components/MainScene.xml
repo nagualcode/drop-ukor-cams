@@ -12,5 +12,6 @@
         <Rectangle id="statusBg" translation="[0,650]" width="1280" height="70" color="0x000000B0" visible="false" />
         <Label id="status" text="" translation="[40,665]" width="1200" height="40" color="0xFFD24DFF" />
         <Timer id="refreshTimer" repeat="true" duration="1" />
+        <Timer id="watchdog" repeat="false" duration="10" />
     </children>
 </component>
